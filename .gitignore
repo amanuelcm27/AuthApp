@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+frontend/dist/
+backend/dist/
+
+# Environment files
+.env
+.env.*
+backend/.env
+frontend/.env
+
+# Python virtual environment
+.venv/
+
+# Prisma local database files
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+
+# Temporary Office/Word lock files
+~$*
+
+# Logs
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
