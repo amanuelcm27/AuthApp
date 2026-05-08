@@ -115,19 +115,22 @@ export async function listTodosByUserId(userId) {
   return prisma.todo.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
 }
 
-export async function createTodo({ userId, title }) {
+export async function createTodo({ userId, title, notes = null, priority = null, dueDate = null }) {
   return prisma.todo.create({
     data: {
       id: `todo_${crypto.randomUUID()}`,
       userId,
       title,
+      notes,
+      priority,
+      dueDate: dueDate ? new Date(dueDate) : null,
       completed: false,
       completedAt: null
     }
   });
 }
 
-export async function updateTodo({ todoId, userId, title, completed }) {
+export async function updateTodo({ todoId, userId, title, completed, notes, priority, dueDate }) {
   const existing = await prisma.todo.findUnique({ where: { id: todoId } });
   if (!existing || existing.userId !== userId) {
     return null;
@@ -142,7 +145,10 @@ export async function updateTodo({ todoId, userId, title, completed }) {
             completed,
             completedAt: completed ? new Date() : null
           }
-        : {})
+        : {}),
+      ...(typeof notes === 'string' ? { notes } : {}),
+      ...(typeof priority === 'string' ? { priority } : {}),
+      ...(dueDate ? { dueDate: new Date(dueDate) } : {})
     }
   });
 }
@@ -155,6 +161,19 @@ export async function deleteTodo({ todoId, userId }) {
 
   await prisma.todo.delete({ where: { id: todoId } });
   return true;
+}
+
+export async function updateUserProfile(userId, { name, bio, avatarUrl }) {
+  const data = {};
+  if (typeof name === 'string') data.name = name;
+  if (typeof bio === 'string') data.bio = bio;
+  if (typeof avatarUrl === 'string') data.avatarUrl = avatarUrl;
+
+  return prisma.user.update({ where: { id: userId }, data });
+}
+
+export async function setUserDisabled(userId, disabled = true) {
+  return prisma.user.update({ where: { id: userId }, data: { disabled } });
 }
 
 export function storeOAuthState(state, data) {

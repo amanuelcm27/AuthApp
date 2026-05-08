@@ -3,15 +3,28 @@ import { config } from '../config.js';
 import { verifyJwt } from '../lib/jwt.js';
 import { handleGoogleCallback, loginUser, registerUser, refreshSession, buildGoogleAuthorizationUrl, getCurrentUser } from '../services/authService.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { createTodo, deleteTodo, deleteUserById, findUserById, listTodosByUserId, listUsers, updateTodo } from '../store/memoryStore.js';
+import { asyncHandler } from '../utils/errorHandler.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import multer from 'multer';
+import { deleteUserById, findUserById, listUsers, updateUserProfile, setUserDisabled } from '../store/memoryStore.js';
 
 const router = express.Router();
 
-function asyncHandler(handler) {
-  return (request, response, next) => {
-    Promise.resolve(handler(request, response, next)).catch(next);
-  };
-}
+// ensure uploads folder exists
+const uploadsRoot = path.resolve(process.cwd(), 'uploads', 'avatars');
+fs.mkdirSync(uploadsRoot, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsRoot),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    const name = `${req.auth?.sub ?? 'anon'}_${Date.now()}${ext}`;
+    cb(null, name);
+  }
+});
+
+const upload = multer({ storage });
 
 function setAuthCookies(response, session) {
   response.cookie('refreshToken', session.refreshToken, {
@@ -62,6 +75,24 @@ router.get('/me', requireAuth, asyncHandler(async (request, response) => {
   return response.json({ user: await getCurrentUser(request.auth.sub) });
 }));
 
+router.patch('/me', requireAuth, asyncHandler(async (request, response) => {
+  const { name, bio, avatarUrl } = request.body ?? {};
+  const updated = await updateUserProfile(request.auth.sub, { name, bio, avatarUrl });
+  const { passwordHash, ...safe } = updated;
+  return response.json({ user: safe });
+}));
+
+router.post('/me/avatar', requireAuth, upload.single('avatar'), asyncHandler(async (request, response) => {
+  if (!request.file) {
+    return response.status(400).json({ message: 'No file uploaded' });
+  }
+
+  const relPath = `/uploads/avatars/${request.file.filename}`;
+  const updated = await updateUserProfile(request.auth.sub, { avatarUrl: relPath });
+  const { passwordHash, ...safe } = updated;
+  return response.json({ user: safe });
+}));
+
 router.get('/google/start', (request, response) => {
   const { url } = buildGoogleAuthorizationUrl();
   return response.redirect(url);
@@ -100,50 +131,19 @@ router.delete('/admin/users/:userId', requireAuth, requireRole('admin'), asyncHa
   return response.json({ message: 'User deleted' });
 }));
 
-router.get('/todos', requireAuth, asyncHandler(async (request, response) => {
-  const todos = await listTodosByUserId(request.auth.sub);
-  return response.json({ todos });
-}));
-
-router.post('/todos', requireAuth, asyncHandler(async (request, response) => {
-  const title = String(request.body?.title ?? '').trim();
-  if (title.length < 2) {
-    return response.status(400).json({ message: 'Todo title must be at least 2 characters' });
+router.patch('/admin/users/:userId', requireAuth, requireRole('admin'), asyncHandler(async (request, response) => {
+  const { disabled } = request.body ?? {};
+  if (request.params.userId === request.auth.sub) {
+    return response.status(400).json({ message: 'You cannot modify your own admin account' });
   }
 
-  const todo = await createTodo({ userId: request.auth.sub, title });
-  return response.status(201).json({ todo });
-}));
-
-router.patch('/todos/:todoId', requireAuth, asyncHandler(async (request, response) => {
-  const nextTitle = typeof request.body?.title === 'string' ? request.body.title.trim() : undefined;
-  const nextCompleted = typeof request.body?.completed === 'boolean' ? request.body.completed : undefined;
-
-  if (typeof nextTitle === 'string' && nextTitle.length < 2) {
-    return response.status(400).json({ message: 'Todo title must be at least 2 characters' });
+  const user = await findUserById(request.params.userId);
+  if (!user) {
+    return response.status(404).json({ message: 'User not found' });
   }
 
-  const todo = await updateTodo({
-    todoId: request.params.todoId,
-    userId: request.auth.sub,
-    title: nextTitle,
-    completed: nextCompleted
-  });
-
-  if (!todo) {
-    return response.status(404).json({ message: 'Todo not found' });
-  }
-
-  return response.json({ todo });
-}));
-
-router.delete('/todos/:todoId', requireAuth, asyncHandler(async (request, response) => {
-  const removed = await deleteTodo({ todoId: request.params.todoId, userId: request.auth.sub });
-  if (!removed) {
-    return response.status(404).json({ message: 'Todo not found' });
-  }
-
-  return response.json({ message: 'Todo deleted' });
+  await setUserDisabled(request.params.userId, !!disabled);
+  return response.json({ message: 'User updated' });
 }));
 
 export default router;

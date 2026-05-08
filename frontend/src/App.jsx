@@ -2,6 +2,21 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { useEffect, useMemo, useState } from 'react';
 import { api, apiBaseUrl, setAccessToken as syncAccessToken } from './api.js';
 import { useAuth } from './auth.jsx';
+import { TodoProvider, useTodo } from './context/TodoContext.jsx';
+import { TodoForm } from './components/todos/TodoForm.jsx';
+import { TodoList } from './components/todos/TodoList.jsx';
+import { TodoFilters } from './components/todos/TodoFilters.jsx';
+import { TodoStats } from './components/todos/TodoStats.jsx';
+import { EditTodoModal } from './components/todos/TodoEditModal.jsx';
+import { ConfirmDialog } from './components/todos/ConfirmDialog.jsx';
+import { Toast } from './components/todos/Toast.jsx';
+
+// Helper to convert relative upload URLs to absolute URLs
+function getAvatarUrl(avatarUrl) {
+  if (!avatarUrl) return null;
+  if (avatarUrl.startsWith('http')) return avatarUrl;
+  return `${apiBaseUrl}${avatarUrl}`;
+}
 
 function decodeJwtPayload(token) {
   const payload = token.split('.')[1] ?? '';
@@ -12,6 +27,7 @@ function decodeJwtPayload(token) {
 
 function Shell({ children }) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div className="app-shell">
@@ -21,7 +37,21 @@ function Shell({ children }) {
           <h1>AuthApp</h1>
           <p>Secure access layer</p>
         </div>
-        <p className="sidebar-note">Your workspace is selected automatically from your role.</p>
+        <nav className="sidebar-tabs">
+          {user?.role === 'admin' ? (
+            <>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=overview')}>Overview</button>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=users')}>Users</button>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=settings')}>Settings</button>
+            </>
+          ) : (
+            <>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=overview')}>Overview</button>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=todos')}>Todos</button>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=profile')}>Profile</button>
+            </>
+          )}
+        </nav>
         <button className="secondary-button" onClick={logout}>Sign out</button>
       </aside>
       <main className="content-area">
@@ -171,6 +201,81 @@ function RegisterForm() {
   );
 }
 
+function ProfileEditor({ user, onSaved, onCancel }) {
+  const { refresh } = useAuth();
+  const [name, setName] = useState(user?.name ?? '');
+  const [bio, setBio] = useState(user?.bio ?? '');
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? '');
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      // upload avatar file if provided
+      if (avatarFile) {
+        await api.uploadAvatar(avatarFile);
+      }
+      await api.updateProfile({ name, bio });
+      await refresh();
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="profile-form" onSubmit={handleSubmit}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <h2>Edit Profile</h2>
+        {onCancel && <button type="button" className="secondary-button" onClick={onCancel}>Cancel</button>}
+      </div>
+      <label>
+        <span style={{ display: 'block', marginBottom: 8, color: '#d5dae2' }}>Name</span>
+        <input value={name} onChange={e => setName(e.target.value)} />
+      </label>
+      <label>
+        <span style={{ display: 'block', marginBottom: 8, color: '#d5dae2' }}>Bio</span>
+        <textarea value={bio} onChange={e => setBio(e.target.value)} />
+      </label>
+      <label>
+        <span style={{ display: 'block', marginBottom: 8, color: '#d5dae2' }}>Avatar</span>
+        <input type="file" accept="image/*" onChange={e => setAvatarFile(e.target.files?.[0] ?? null)} />
+      </label>
+      <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+        <button className="primary-button" type="submit" disabled={saving}>Save Changes</button>
+        {error ? <p className="form-error">{error}</p> : null}
+      </div>
+    </form>
+  );
+}
+
+function ProfileView({ user, onEdit }) {
+  return (
+    <div className="profile-view">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
+        <div>
+          <h2 style={{ margin: '0 0 16px 0' }}>{user?.name}</h2>
+          {user?.avatarUrl ? <img src={getAvatarUrl(user.avatarUrl)} alt="avatar" style={{ width: 80, height: 80, borderRadius: 12, marginBottom: 16 }} /> : <div style={{ width: 80, height: 80, borderRadius: 12, background: 'rgba(255, 138, 31, 0.2)', marginBottom: 16 }} />}
+          <p style={{ margin: '0 0 8px 0', color: 'var(--text)' }}>{user?.email}</p>
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.85rem' }}>{user?.role}</p>
+        </div>
+        <button className="primary-button" onClick={onEdit}>Edit Profile</button>
+      </div>
+      {user?.bio && (
+        <div>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>{user.bio}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProtectedRoute({ allowedRoles, children }) {
   const { user, loading } = useAuth();
   if (loading) {
@@ -196,97 +301,196 @@ function DashboardPage() {
   return <UserDashboard user={user} claims={claims} />;
 }
 
-function UserDashboard({ user, claims }) {
-  const [todos, setTodos] = useState([]);
-  const [newTodo, setNewTodo] = useState('');
+/**
+ * Inner todo dashboard content (uses TodoContext)
+ */
+function TodoDashboardContent({ user }) {
+  const { toast, deleteTodo, clearCompleted, showToast } = useTodo();
+  const [editingTodo, setEditingTodo] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [clearCompletedConfirm, setClearCompletedConfirm] = useState(false);
+
+  const handleEditTodo = (todo) => {
+    setEditingTodo(todo);
+  };
+
+  const handleDeleteTodo = (todo) => {
+    setDeleteConfirm(todo);
+  };
+
+  const confirmDelete = async () => {
+    if (deleteConfirm) {
+      try {
+        await deleteTodo(deleteConfirm.id);
+        setDeleteConfirm(null);
+      } catch (err) {
+        console.error('Delete error:', err);
+      }
+    }
+  };
+
+  const handleClearCompleted = async () => {
+    try {
+      await clearCompleted();
+      setClearCompletedConfirm(false);
+    } catch (err) {
+      console.error('Clear error:', err);
+    }
+  };
+
+  return (
+    <div>
+      <TodoForm />
+
+      <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid var(--line)' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '14px', fontWeight: '600', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          Filters & Search
+        </h3>
+        <TodoFilters />
+      </div>
+
+      <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid var(--line)' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '14px', fontWeight: '600', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          Statistics
+        </h3>
+        <TodoStats />
+      </div>
+
+      <div style={{ marginBottom: '24px' }}>
+        <TodoList onEditTodo={handleEditTodo} onDeleteTodo={handleDeleteTodo} />
+      </div>
+
+      <button
+        onClick={() => setClearCompletedConfirm(true)}
+        className="secondary-button"
+        style={{ marginTop: '16px' }}
+      >
+        Clear Completed Todos
+      </button>
+
+      {editingTodo && (
+        <EditTodoModal
+          todo={editingTodo}
+          onClose={() => setEditingTodo(null)}
+          onSave={() => setEditingTodo(null)}
+        />
+      )}
+
+      {deleteConfirm && (
+        <ConfirmDialog
+          title="Delete Todo?"
+          message={`Are you sure you want to delete "${deleteConfirm.title}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          isDangerous
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+
+      {clearCompletedConfirm && (
+        <ConfirmDialog
+          title="Clear All Completed?"
+          message="This will permanently delete all completed todos. This action cannot be undone."
+          confirmText="Delete All"
+          cancelText="Cancel"
+          isDangerous
+          onConfirm={handleClearCompleted}
+          onCancel={() => setClearCompletedConfirm(false)}
+        />
+      )}
+
+      {toast && <Toast message={toast.message} type={toast.type} />}
+    </div>
+  );
+}
+
+function OverviewStats() {
+  const [stats, setStats] = useState({ total: 0, remaining: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.listTodos()
-      .then(({ todos: todoList }) => setTodos(todoList))
-      .catch(loadError => setError(loadError.message))
-      .finally(() => setLoading(false));
+    async function loadStats() {
+      try {
+        const response = await api.getTodoStats();
+        setStats(response || { total: 0, remaining: 0, completed: 0 });
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadStats();
   }, []);
 
-  async function handleCreateTodo(event) {
-    event.preventDefault();
-    if (newTodo.trim().length < 2) {
-      setError('Todo title must be at least 2 characters');
-      return;
-    }
-
-    try {
-      const { todo } = await api.createTodo({ title: newTodo.trim() });
-      setTodos(previous => [todo, ...previous]);
-      setNewTodo('');
-      setError('');
-    } catch (creationError) {
-      setError(creationError.message);
-    }
+  if (loading) {
+    return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: '20px' }}>Loading stats...</div>;
   }
 
-  async function handleToggleTodo(todo) {
-    try {
-      const { todo: updated } = await api.updateTodo(todo.id, { completed: !todo.completed });
-      setTodos(previous => previous.map(entry => (entry.id === updated.id ? updated : entry)));
-    } catch (updateError) {
-      setError(updateError.message);
-    }
-  }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', marginTop: '20px' }}>
+      <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--accent)', marginBottom: '8px' }}>{stats.total}</div>
+        <div style={{ color: 'var(--muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Todos</div>
+      </div>
+      <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--accent)', marginBottom: '8px' }}>{stats.remaining}</div>
+        <div style={{ color: 'var(--muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Remaining</div>
+      </div>
+      <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--line)', borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--accent)', marginBottom: '8px' }}>{stats.completed}</div>
+        <div style={{ color: 'var(--muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Completed</div>
+      </div>
+    </div>
+  );
+}
 
-  async function handleDeleteTodo(todoId) {
-    try {
-      await api.deleteTodo(todoId);
-      setTodos(previous => previous.filter(entry => entry.id !== todoId));
-    } catch (deleteError) {
-      setError(deleteError.message);
-    }
-  }
+function UserDashboard({ user, claims }) {
+  const location = useLocation();
+  const tab = new URLSearchParams(location.search).get('tab') || 'overview';
+  const [editingProfile, setEditingProfile] = useState(false);
 
   return (
     <Shell>
       <section className="dashboard-grid">
-        <article className="feature-card accent">
-          <span className="eyebrow">User workspace</span>
-          <h2>{user?.name}</h2>
-          <p>{user?.email}</p>
-          <p>Token role claim: {claims?.role}</p>
-        </article>
+        {tab === 'overview' && (
+          <article className="feature-card accent">
+            <span className="eyebrow">Workspace</span>
+            <h2>Welcome back</h2>
+            <p>Use the tabs to access your todos and profile.</p>
+          </article>
+        )}
         <article className="feature-card">
-          <span className="eyebrow">Productivity</span>
-          <h2>My Todo List</h2>
-          <form className="todo-form" onSubmit={handleCreateTodo}>
-            <input
-              value={newTodo}
-              onChange={event => setNewTodo(event.target.value)}
-              placeholder="Add a task for today"
-              aria-label="New todo"
-            />
-            <button className="primary-button" type="submit">Add</button>
-          </form>
-          {error ? <p className="form-error">{error}</p> : null}
-          {loading ? <p>Loading todos...</p> : null}
-          {!loading ? (
-            <ul className="todo-list">
-              {todos.map(todo => (
-                <li key={todo.id} className="todo-item">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={todo.completed}
-                      onChange={() => handleToggleTodo(todo)}
-                    />
-                    <span className={todo.completed ? 'todo-done' : ''}>{todo.title}</span>
-                  </label>
-                  <button className="link-button" type="button" onClick={() => handleDeleteTodo(todo.id)}>
-                    Delete
-                  </button>
-                </li>
-              ))}
-              {todos.length === 0 ? <li className="todo-empty">No todos yet. Add your first task.</li> : null}
-            </ul>
-          ) : null}
+          {tab === 'overview' && (
+            <>
+              <span className="eyebrow">Overview</span>
+              <h2>Quick stats</h2>
+              <p>Get organized with your personal todo list. Create, edit, and track your tasks with priority levels and due dates.</p>
+              <OverviewStats />
+            </>
+          )}
+
+          {tab === 'todos' && (
+            <>
+              <span className="eyebrow">Productivity</span>
+              <h2>My Todo List</h2>
+              <TodoProvider>
+                <TodoDashboardContent user={user} />
+              </TodoProvider>
+            </>
+          )}
+
+          {tab === 'profile' && (
+            <>
+              <span className="eyebrow">Profile</span>
+              {editingProfile ? (
+                <ProfileEditor user={user} onSaved={() => setEditingProfile(false)} onCancel={() => setEditingProfile(false)} />
+              ) : (
+                <ProfileView user={user} onEdit={() => setEditingProfile(true)} />
+              )}
+            </>
+          )}
         </article>
       </section>
     </Shell>
@@ -294,6 +498,8 @@ function UserDashboard({ user, claims }) {
 }
 
 function AdminDashboard({ user, claims }) {
+  const location = useLocation();
+  const tab = new URLSearchParams(location.search).get('tab') || 'overview';
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -327,12 +533,14 @@ function AdminDashboard({ user, claims }) {
   return (
     <Shell>
       <section className="dashboard-grid">
-        <article className="feature-card accent">
-          <span className="eyebrow">Admin workspace</span>
-          <h2>{user?.name}</h2>
-          <p>{user?.email}</p>
-          <p>Token role claim: {claims?.role}</p>
-        </article>
+        {tab === 'overview' && (
+          <article className="feature-card accent">
+            <span className="eyebrow">Admin workspace</span>
+            <h2>{user?.name}</h2>
+            <p>{user?.email}</p>
+            <p>Token role claim: {claims?.role}</p>
+          </article>
+        )}
         <article className="feature-card">
           <span className="eyebrow">Management</span>
           <h2>User Accounts</h2>

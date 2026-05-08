@@ -39,10 +39,55 @@ export const api = {
   adminHealth: () => request('/auth/admin/health'),
   adminUsers: () => request('/auth/admin/users'),
   deleteUser: userId => request(`/auth/admin/users/${userId}`, { method: 'DELETE' }),
-  listTodos: () => request('/auth/todos'),
-  createTodo: body => request('/auth/todos', { method: 'POST', body: JSON.stringify(body) }),
-  updateTodo: (todoId, body) => request(`/auth/todos/${todoId}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteTodo: todoId => request(`/auth/todos/${todoId}`, { method: 'DELETE' })
+  adminUpdateUser: (userId, body) => request(`/auth/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  updateProfile: body => request('/auth/me', { method: 'PATCH', body: JSON.stringify(body) }),
+  uploadAvatar: async file => {
+    const form = new FormData();
+    form.append('avatar', file);
+    const url = `${apiBaseUrl}/auth/me/avatar`;
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {})
+        },
+        body: form
+      });
+    } catch (err) {
+      console.error('Upload network error', { url, err });
+      throw new Error(`Network error while uploading avatar to ${url}`);
+    }
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error('Upload failed', { url, status: res.status, payload });
+      throw new Error(payload.message ?? `Upload failed (${res.status})`);
+    }
+
+    return payload;
+  },
+  // Todo endpoints
+  listTodos: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.status) query.append('status', params.status);
+    if (params.priority) query.append('priority', params.priority);
+    if (params.sort) query.append('sort', params.sort);
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    const queryString = query.toString();
+    return request(`/api/todos${queryString ? '?' + queryString : ''}`);
+  },
+  getTodoStats: () => request('/api/todos/stats'),
+  createTodo: body => request('/api/todos', { method: 'POST', body: JSON.stringify(body) }),
+  getTodo: todoId => request(`/api/todos/${todoId}`),
+  updateTodo: (todoId, body) => request(`/api/todos/${todoId}`, { method: 'PUT', body: JSON.stringify(body) }),
+  toggleTodo: todoId => request(`/api/todos/${todoId}/toggle`, { method: 'PATCH' }),
+  deleteTodo: todoId => request(`/api/todos/${todoId}`, { method: 'DELETE' }),
+  clearCompletedTodos: () => request('/api/todos/completed/all', { method: 'DELETE' })
 };
 
 export const apiBaseUrl = API_BASE_URL;
