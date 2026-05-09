@@ -2,14 +2,8 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { useEffect, useMemo, useState } from 'react';
 import { api, apiBaseUrl, setAccessToken as syncAccessToken } from './api.js';
 import { useAuth } from './auth.jsx';
-import { TodoProvider, useTodo } from './context/TodoContext.jsx';
-import { TodoForm } from './components/todos/TodoForm.jsx';
-import { TodoList } from './components/todos/TodoList.jsx';
-import { TodoFilters } from './components/todos/TodoFilters.jsx';
-import { TodoStats } from './components/todos/TodoStats.jsx';
-import { EditTodoModal } from './components/todos/TodoEditModal.jsx';
-import { ConfirmDialog } from './components/todos/ConfirmDialog.jsx';
-import { Toast } from './components/todos/Toast.jsx';
+import { TodoProvider } from './context/TodoContext.jsx';
+import { TodoDashboardTab } from './components/todos/TodoDashboardTab.jsx';
 import { TwoFAChallengeForm } from './components/auth/TwoFAChallenge.jsx';
 import { TwoFASettings } from './components/auth/TwoFASettings.jsx';
 
@@ -426,110 +420,6 @@ function DashboardPage() {
   return <UserDashboard user={user} claims={claims} />;
 }
 
-/**
- * Inner todo dashboard content (uses TodoContext)
- */
-function TodoDashboardContent({ user }) {
-  const { toast, deleteTodo, clearCompleted, showToast } = useTodo();
-  const [editingTodo, setEditingTodo] = useState(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [clearCompletedConfirm, setClearCompletedConfirm] = useState(false);
-
-  const handleEditTodo = (todo) => {
-    setEditingTodo(todo);
-  };
-
-  const handleDeleteTodo = (todo) => {
-    setDeleteConfirm(todo);
-  };
-
-  const confirmDelete = async () => {
-    if (deleteConfirm) {
-      try {
-        await deleteTodo(deleteConfirm.id);
-        setDeleteConfirm(null);
-      } catch (err) {
-        console.error('Delete error:', err);
-      }
-    }
-  };
-
-  const handleClearCompleted = async () => {
-    try {
-      await clearCompleted();
-      setClearCompletedConfirm(false);
-    } catch (err) {
-      console.error('Clear error:', err);
-    }
-  };
-
-  return (
-    <div>
-      <TodoForm />
-
-      <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid var(--line)' }}>
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '14px', fontWeight: '600', textTransform: 'uppercase', color: 'var(--muted)' }}>
-          Filters & Search
-        </h3>
-        <TodoFilters />
-      </div>
-
-      <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid var(--line)' }}>
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '14px', fontWeight: '600', textTransform: 'uppercase', color: 'var(--muted)' }}>
-          Statistics
-        </h3>
-        <TodoStats />
-      </div>
-
-      <div style={{ marginBottom: '24px' }}>
-        <TodoList onEditTodo={handleEditTodo} onDeleteTodo={handleDeleteTodo} />
-      </div>
-
-      <button
-        onClick={() => setClearCompletedConfirm(true)}
-        className="secondary-button"
-        style={{ marginTop: '16px' }}
-      >
-        Clear Completed Todos
-      </button>
-
-      {editingTodo && (
-        <EditTodoModal
-          todo={editingTodo}
-          onClose={() => setEditingTodo(null)}
-          onSave={() => setEditingTodo(null)}
-        />
-      )}
-
-      {deleteConfirm && (
-        <ConfirmDialog
-          title="Delete Todo?"
-          message={`Are you sure you want to delete "${deleteConfirm.title}"? This action cannot be undone.`}
-          confirmText="Delete"
-          cancelText="Cancel"
-          isDangerous
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteConfirm(null)}
-        />
-      )}
-
-      {clearCompletedConfirm && (
-        <ConfirmDialog
-          title="Clear All Completed?"
-          message="This will permanently delete all completed todos. This action cannot be undone."
-          confirmText="Delete All"
-          cancelText="Cancel"
-          isDangerous
-          onConfirm={handleClearCompleted}
-          onCancel={() => setClearCompletedConfirm(false)}
-        />
-      )}
-
-      {toast && <Toast message={toast.message} type={toast.type} />}
-    </div>
-  );
-}
-
 function OverviewStats() {
   const [stats, setStats] = useState({ total: 0, remaining: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
@@ -602,7 +492,7 @@ function UserDashboard({ user, claims }) {
               <span className="eyebrow">Productivity</span>
               <h2>My Todo List</h2>
               <TodoProvider>
-                <TodoDashboardContent user={user} />
+                <TodoDashboardTab />
               </TodoProvider>
             </>
           )}
@@ -642,6 +532,12 @@ function AdminDashboard({ user, claims }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('user');
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   async function loadUsers() {
     setLoading(true);
@@ -659,6 +555,30 @@ function AdminDashboard({ user, claims }) {
   useEffect(() => {
     loadUsers();
   }, []);
+
+  async function handleCreateUser(e) {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const { user: created } = await api.createAdminUser({
+        name: newName,
+        email: newEmail,
+        password: newPassword,
+        role: newRole
+      });
+      setUsers(prev => [created, ...prev]);
+      setNewName('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewRole('user');
+      setShowCreateModal(false);
+      setError('');
+    } catch (createError) {
+      setError(createError.message);
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function handleDeleteUser(userId) {
     try {
@@ -678,35 +598,93 @@ function AdminDashboard({ user, claims }) {
             <h2>{user?.name}</h2>
             <p>{user?.email}</p>
             <p>Token role claim: {claims?.role}</p>
+            <div style={{ marginTop: 12 }}>
+              <strong>Total users:</strong> {users.length}
+            </div>
           </article>
         )}
-        <article className="feature-card">
-          <span className="eyebrow">Management</span>
-          <h2>User Accounts</h2>
-          <p>Review and remove accounts directly from the admin dashboard.</p>
-          {error ? <p className="form-error">{error}</p> : null}
-          {loading ? <p>Loading users...</p> : null}
-          {!loading ? (
-            <ul className="user-list">
-              {users.map(entry => (
-                <li className="user-item" key={entry.id}>
-                  <div>
-                    <strong>{entry.name}</strong>
-                    <p>{entry.email} • {entry.role}</p>
-                  </div>
-                  <button
-                    className="link-button"
-                    type="button"
-                    onClick={() => handleDeleteUser(entry.id)}
-                    disabled={entry.id === user.id}
-                  >
-                    {entry.id === user.id ? 'Current Admin' : 'Delete'}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </article>
+
+        {tab === 'users' && (
+          <article className="feature-card">
+            <span className="eyebrow">Users</span>
+            <h2>User Accounts</h2>
+            <p>Manage all platform users here. You can view every account and delete users when needed.</p>
+            {error ? <p className="form-error">{error}</p> : null}
+            {loading ? <p>Loading users...</p> : null}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 16px' }}>
+              <p style={{ margin: 0, color: 'var(--muted)' }}>Total users: {users.length}</p>
+              <button className="primary-button" type="button" onClick={() => setShowCreateModal(true)}>Create User</button>
+            </div>
+
+            {!loading ? (
+              <ul className="user-list">
+                {users.map(entry => (
+                  <li className="user-item" key={entry.id}>
+                    <div>
+                      <strong>{entry.name}</strong>
+                      <p>{entry.email} • {entry.role}</p>
+                    </div>
+                    <button
+                      className="link-button"
+                      type="button"
+                      onClick={() => handleDeleteUser(entry.id)}
+                      disabled={entry.id === user.id}
+                    >
+                      {entry.id === user.id ? 'Current Admin' : 'Delete'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {showCreateModal ? (
+              <div
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+                  zIndex: 1000
+                }}
+                onClick={() => setShowCreateModal(false)}
+              >
+                <div role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+                  <form className="panel-form" onSubmit={handleCreateUser} style={{ margin: 0 }}>
+                    <h2 style={{ marginTop: 0 }}>Create User</h2>
+                    <label>Name<input value={newName} onChange={e => setNewName(e.target.value)} required /></label>
+                    <label>Email<input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} required /></label>
+                    <label>Password<input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required /></label>
+                    <label>Role
+                      <select value={newRole} onChange={e => setNewRole(e.target.value)}>
+                        <option value="user">user</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </label>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+                      <button className="secondary-button" type="button" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                      <button className="primary-button" type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ) : null}
+          </article>
+        )}
+
+        {tab === 'settings' && (
+          <article className="feature-card">
+            <span className="eyebrow">Settings</span>
+            <h2>Admin Settings</h2>
+            <p>Manage application-level settings here. For now this area shows admin account information and quick links.</p>
+            <div style={{ marginTop: 12 }}>
+              <p><strong>Admin:</strong> {user?.name} • {user?.email}</p>
+              <p><strong>Role:</strong> {user?.role}</p>
+            </div>
+          </article>
+        )}
       </section>
     </Shell>
   );

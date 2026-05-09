@@ -176,6 +176,10 @@ export async function setUserDisabled(userId, disabled = true) {
   return prisma.user.update({ where: { id: userId }, data: { disabled } });
 }
 
+export async function updateUserRole(userId, role) {
+  return prisma.user.update({ where: { id: userId }, data: { role } });
+}
+
 export function storeOAuthState(state, data) {
   oauthStates.set(state, data);
 }

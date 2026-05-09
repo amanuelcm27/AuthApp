@@ -62,8 +62,8 @@ export async function getTodos(userId, { search = null, status = 'all', priority
   // Search filter (title and notes)
   if (search) {
     where.OR = [
-      { title: { contains: search, mode: 'insensitive' } },
-      { notes: { contains: search, mode: 'insensitive' } }
+      { title: { contains: search } },
+      { notes: { contains: search } }
     ];
   }
 

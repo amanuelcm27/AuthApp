@@ -30,16 +30,29 @@ async function request(path, options = {}) {
   return payload;
 }
 
+async function adminRequest(path, options = {}) {
+  try {
+    return await request(`/api/admin${path}`, options);
+  } catch (error) {
+    // Backward compatibility for servers still exposing /auth/admin routes
+    if (error?.message?.includes('(404)')) {
+      return request(`/auth/admin${path}`, options);
+    }
+    throw error;
+  }
+}
+
 export const api = {
   register: body => request('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
   login: body => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   refresh: () => request('/auth/refresh', { method: 'POST' }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
-  adminHealth: () => request('/auth/admin/health'),
-  adminUsers: () => request('/auth/admin/users'),
-  deleteUser: userId => request(`/auth/admin/users/${userId}`, { method: 'DELETE' }),
-  adminUpdateUser: (userId, body) => request(`/auth/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  adminHealth: () => adminRequest('/health'),
+  adminUsers: () => adminRequest('/users'),
+  createAdminUser: body => adminRequest('/users', { method: 'POST', body: JSON.stringify(body) }),
+  deleteUser: userId => adminRequest(`/users/${userId}`, { method: 'DELETE' }),
+  adminUpdateUser: (userId, body) => adminRequest(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   updateProfile: body => request('/auth/me', { method: 'PATCH', body: JSON.stringify(body) }),
   uploadAvatar: async file => {
     const form = new FormData();
