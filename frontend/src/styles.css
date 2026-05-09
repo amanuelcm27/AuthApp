@@ -117,6 +117,52 @@ button { cursor: pointer; }
   padding: 14px 16px;
 }
 
+.password-field {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+  color: #d5dae2;
+}
+
+.password-field span {
+  display: block;
+}
+
+.password-field__control {
+  position: relative;
+}
+
+.password-field__control input {
+  width: 100%;
+  padding-right: 52px;
+}
+
+.password-field__toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
+.password-field__toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.password-field__toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
 .panel-form input:focus {
   outline: 2px solid rgba(255, 138, 31, 0.45);
   border-color: rgba(255, 138, 31, 0.65);
@@ -155,6 +201,82 @@ button { cursor: pointer; }
   gap: 12px;
   margin-top: 20px;
   align-items: center;
+}
+
+.password-strength {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 10px;
+}
+
+.password-strength__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.password-strength__header strong {
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.password-strength__bar {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.password-strength__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff6b6b, #ff8a1f, #a3e635);
+  transition: width 0.2s ease;
+}
+
+.password-strength__checks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.password-strength__checks li {
+  position: relative;
+  padding-left: 18px;
+}
+
+.password-strength__checks li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.password-strength__checks .is-ok {
+  color: #b8e986;
+}
+
+.password-strength__checks .is-ok::before {
+  background: #b8e986;
+}
+
+.password-strength__checks .is-missing {
+  color: var(--muted);
+}
+
+.password-strength__checks .is-missing::before {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .form-error {

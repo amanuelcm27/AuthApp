@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { signJwt, signState, verifyState } from '../lib/jwt.js';
 import { verifyPassword } from '../lib/password.js';
+import { validateRegistrationInput } from '../validators/authValidator.js';
 import {
   attachGoogleUser,
   createLocalUser,
@@ -41,11 +42,18 @@ async function buildSession(user) {
 }
 
 export async function registerUser({ name, email, password }) {
-  if (await findUserByEmail(email)) {
+  const normalized = validateRegistrationInput({ name, email, password });
+
+  if (await findUserByEmail(normalized.email)) {
     throw new Error('An account with that email already exists');
   }
 
-  const user = await createLocalUser({ name, email, password, role: 'user' });
+  const user = await createLocalUser({
+    name: normalized.name,
+    email: normalized.email,
+    password: normalized.password,
+    role: 'user'
+  });
   return buildSession(user);
 }
 

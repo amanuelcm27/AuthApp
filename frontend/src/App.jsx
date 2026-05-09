@@ -25,6 +25,26 @@ function decodeJwtPayload(token) {
   return JSON.parse(atob(padded));
 }
 
+function getPasswordStrength(password) {
+  const checks = [
+    { label: '8+ characters', ok: password.length >= 8 },
+    { label: 'Lowercase', ok: /[a-z]/.test(password) },
+    { label: 'Uppercase', ok: /[A-Z]/.test(password) },
+    { label: 'Number', ok: /\d/.test(password) },
+    { label: 'Symbol', ok: /[^A-Za-z0-9]/.test(password) }
+  ];
+
+  const passed = checks.filter(check => check.ok).length;
+  const strength = passed <= 1 ? 'weak' : passed <= 3 ? 'fair' : passed === 4 ? 'strong' : 'very-strong';
+
+  return {
+    strength,
+    score: passed,
+    checks,
+    meetsPolicy: checks.every(check => check.ok)
+  };
+}
+
 function Shell({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -127,15 +147,54 @@ function AuthForm({ title, submitLabel, onSubmit, footer, children }) {
   );
 }
 
+function PasswordField({ label = 'Password', name = 'password', placeholder, value, onChange, required = true }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <label className="password-field">
+      <span>{label}</span>
+      <div className="password-field__control">
+        <input
+          name={name}
+          type={visible ? 'text' : 'password'}
+          placeholder={placeholder}
+          required={required}
+          value={value}
+          onChange={onChange}
+        />
+        <button
+          type="button"
+          className="password-field__toggle"
+          onClick={() => setVisible(current => !current)}
+          aria-label={visible ? 'Hide password' : 'Show password'}
+          title={visible ? 'Hide password' : 'Show password'}
+        >
+          {visible ? (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.98 8.223A11.96 11.96 0 0 0 1.5 12s3.5 6.5 10.5 6.5c1.303 0 2.515-.177 3.635-.488l-1.49-1.49A6.5 6.5 0 0 1 6.99 9.857L5.4 8.268A12.5 12.5 0 0 0 3.98 8.223Zm3.136-2.08L5.693 4.72l1.06-1.06 12.586 12.586-1.06 1.06-2.24-2.24A10.44 10.44 0 0 1 12 18.5C5 18.5 1.5 12 1.5 12a14.5 14.5 0 0 1 5.616-5.857Zm2.4 2.4A4.5 4.5 0 0 1 14.1 13.28l-2.39-2.39a1.99 1.99 0 0 0-2.195-2.195Z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5.5c7 0 10.5 6.5 10.5 6.5s-3.5 6.5-10.5 6.5S1.5 12 1.5 12 5 5.5 12 5.5Zm0 2A4.5 4.5 0 1 0 12 16a4.5 4.5 0 0 0 0-9Zm0 2.5A2 2 0 1 1 12 14a2 2 0 0 1 0-4Z" />
+            </svg>
+          )}
+        </button>
+      </div>
+    </label>
+  );
+}
+
 function LoginForm() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
 
   async function handleSubmit(event) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const body = Object.fromEntries(formData.entries());
+    body.password = password;
 
     try {
       await login(body);
@@ -158,7 +217,12 @@ function LoginForm() {
       }
     >
       <label>Email<input name="email" type="email" placeholder="admin@authapp.local" required /></label>
-      <label>Password<input name="password" type="password" placeholder="Admin123!" required /></label>
+      <PasswordField
+        label="Password"
+        placeholder="Admin123!"
+        value={password}
+        onChange={event => setPassword(event.target.value)}
+      />
       {error ? <p className="form-error">{error}</p> : null}
     </AuthForm>
   );
@@ -168,6 +232,9 @@ function RegisterForm() {
   const navigate = useNavigate();
   const { register } = useAuth();
   const [error, setError] = useState('');
+  const [password, setPassword] = useState('');
+
+  const passwordStrength = getPasswordStrength(password);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -175,6 +242,12 @@ function RegisterForm() {
     const body = Object.fromEntries(formData.entries());
 
     try {
+      const strength = getPasswordStrength(body.password ?? '');
+      if (!strength.meetsPolicy) {
+        setError('Use a stronger password before registering.');
+        return;
+      }
+
       await register(body);
       navigate('/dashboard');
     } catch (submissionError) {
@@ -195,7 +268,26 @@ function RegisterForm() {
     >
       <label>Name<input name="name" type="text" placeholder="Jordan Taylor" required /></label>
       <label>Email<input name="email" type="email" placeholder="you@company.com" required /></label>
-      <label>Password<input name="password" type="password" placeholder="Create a password" required /></label>
+      <PasswordField
+        label="Password"
+        placeholder="Create a password"
+        value={password}
+        onChange={event => setPassword(event.target.value)}
+      />
+      <div className={`password-strength password-strength--${passwordStrength.strength}`} aria-live="polite">
+        <div className="password-strength__header">
+          <span>Password strength</span>
+          <strong>{passwordStrength.strength.replace('-', ' ')}</strong>
+        </div>
+        <div className="password-strength__bar">
+          <div className="password-strength__fill" style={{ width: `${(passwordStrength.score / 5) * 100}%` }} />
+        </div>
+        <ul className="password-strength__checks">
+          {passwordStrength.checks.map(check => (
+            <li key={check.label} className={check.ok ? 'is-ok' : 'is-missing'}>{check.label}</li>
+          ))}
+        </ul>
+      </div>
       {error ? <p className="form-error">{error}</p> : null}
     </AuthForm>
   );
