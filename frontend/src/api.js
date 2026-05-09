@@ -87,7 +87,12 @@ export const api = {
   updateTodo: (todoId, body) => request(`/api/todos/${todoId}`, { method: 'PUT', body: JSON.stringify(body) }),
   toggleTodo: todoId => request(`/api/todos/${todoId}/toggle`, { method: 'PATCH' }),
   deleteTodo: todoId => request(`/api/todos/${todoId}`, { method: 'DELETE' }),
-  clearCompletedTodos: () => request('/api/todos/completed/all', { method: 'DELETE' })
+  clearCompletedTodos: () => request('/api/todos/completed/all', { method: 'DELETE' }),
+  // 2FA endpoints
+  setup2FA: () => request('/auth/2fa/setup'),
+  verify2FASetup: body => request('/auth/2fa/verify-setup', { method: 'POST', body: JSON.stringify(body) }),
+  disable2FA: () => request('/auth/2fa/disable', { method: 'POST' }),
+  verify2FALogin: body => request('/auth/2fa/verify-login', { method: 'POST', body: JSON.stringify(body) })
 };
 
 export const apiBaseUrl = API_BASE_URL;

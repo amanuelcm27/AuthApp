@@ -67,8 +67,27 @@ export async function loginUser({ email, password }) {
     throw new Error('Invalid email or password');
   }
 
+  // Check if 2FA is enabled
+  if (user.twoFactorEnabled) {
+    return {
+      requiresTwoFactor: true,
+      userId: user.id,
+      user: userResponse(user)
+    };
+  }
+
   return buildSession(user);
 }
+
+export async function completeTwoFactorLogin(userId) {
+  const user = await findUserById(userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  return buildSession(user);
+}
+
 
 export async function refreshSession(refreshTokenPayload) {
   const tokenRecord = await findRefreshToken(refreshTokenPayload.jti);

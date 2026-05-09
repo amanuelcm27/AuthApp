@@ -18,6 +18,9 @@ model User {
   role              String
   provider          String
   providerAccountId String?
+  twoFactorEnabled  Boolean        @default(false)
+  twoFactorSecret   String?
+  backupCodes       String?        // JSON array stored as string
   createdAt         DateTime       @default(now())
   refreshTokens     RefreshToken[]
   todos             Todo[]

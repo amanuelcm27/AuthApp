@@ -56,11 +56,31 @@ export function AuthProvider({ children }) {
     loading,
     isAuthenticated: Boolean(user && accessToken),
     async login(credentials) {
-      const session = await api.login(credentials);
-      setUser(session.user);
-      setSessionAccessToken(session.accessToken);
-      syncAccessToken(session.accessToken);
-      return session;
+      const response = await api.login(credentials);
+      
+      // Check if 2FA is required
+      if (response.requiresTwoFactor) {
+        return response;
+      }
+
+      // Normal login flow
+      setUser(response.user);
+      setSessionAccessToken(response.accessToken);
+      syncAccessToken(response.accessToken);
+      return response;
+    },
+    async verify2FA(userId, token, useBackupCode) {
+      const response = await api.verify2FALogin({
+        userId,
+        token,
+        useBackupCode
+      });
+
+      // 2FA verified - now we have the session
+      setUser(response.user);
+      setSessionAccessToken(response.accessToken);
+      syncAccessToken(response.accessToken);
+      return response;
     },
     async register(credentials) {
       const session = await api.register(credentials);

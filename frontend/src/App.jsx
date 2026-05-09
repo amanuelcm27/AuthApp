@@ -10,6 +10,8 @@ import { TodoStats } from './components/todos/TodoStats.jsx';
 import { EditTodoModal } from './components/todos/TodoEditModal.jsx';
 import { ConfirmDialog } from './components/todos/ConfirmDialog.jsx';
 import { Toast } from './components/todos/Toast.jsx';
+import { TwoFAChallengeForm } from './components/auth/TwoFAChallenge.jsx';
+import { TwoFASettings } from './components/auth/TwoFASettings.jsx';
 
 // Helper to convert relative upload URLs to absolute URLs
 function getAvatarUrl(avatarUrl) {
@@ -69,6 +71,7 @@ function Shell({ children }) {
               <button className="tab" onClick={() => navigate('/dashboard?tab=overview')}>Overview</button>
               <button className="tab" onClick={() => navigate('/dashboard?tab=todos')}>Todos</button>
               <button className="tab" onClick={() => navigate('/dashboard?tab=profile')}>Profile</button>
+              <button className="tab" onClick={() => navigate('/dashboard?tab=settings')}>Settings</button>
             </>
           )}
         </nav>
@@ -186,9 +189,11 @@ function PasswordField({ label = 'Password', name = 'password', placeholder, val
 
 function LoginForm() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, verify2FA } = useAuth();
   const [error, setError] = useState('');
   const [password, setPassword] = useState('');
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [userId, setUserId] = useState(null);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -197,11 +202,39 @@ function LoginForm() {
     body.password = password;
 
     try {
-      await login(body);
-      navigate('/dashboard');
+      const response = await login(body);
+      
+      // Check if 2FA is required
+      if (response.requiresTwoFactor) {
+        setRequiresTwoFactor(true);
+        setUserId(response.userId);
+        setError('');
+      } else {
+        // Normal login - navigate to dashboard
+        navigate('/dashboard');
+      }
     } catch (submissionError) {
       setError(submissionError.message);
     }
+  }
+
+  async function handle2FASuccess(response) {
+    // 2FA verified - redirect to dashboard
+    navigate('/dashboard');
+  }
+
+  if (requiresTwoFactor) {
+    return (
+      <TwoFAChallengeForm
+        userId={userId}
+        onSuccess={handle2FASuccess}
+        onCancel={() => {
+          setRequiresTwoFactor(false);
+          setUserId(null);
+          setPassword('');
+        }}
+      />
+    );
   }
 
   return (
@@ -542,6 +575,7 @@ function UserDashboard({ user, claims }) {
   const location = useLocation();
   const tab = new URLSearchParams(location.search).get('tab') || 'overview';
   const [editingProfile, setEditingProfile] = useState(false);
+  const [updated, setUpdated] = useState(0);
 
   return (
     <Shell>
@@ -581,6 +615,19 @@ function UserDashboard({ user, claims }) {
               ) : (
                 <ProfileView user={user} onEdit={() => setEditingProfile(true)} />
               )}
+            </>
+          )}
+
+          {tab === 'settings' && (
+            <>
+              <span className="eyebrow">Account</span>
+              <h2>Security Settings</h2>
+              <TwoFASettings 
+                user={user} 
+                onUpdated={() => {
+                  setUpdated(updated + 1);
+                }}
+              />
             </>
           )}
         </article>
